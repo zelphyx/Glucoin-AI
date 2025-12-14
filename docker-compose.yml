@@ -5,30 +5,52 @@ services:
   detection-api:
     build: .
     container_name: glucoin-detection
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
+    volumes:
+      - model-data:/app/models
     environment:
       - TF_CPP_MIN_LOG_LEVEL=2
-    command: uvicorn api_detection:app --host 0.0.0.0 --port 8001
+    command: uvicorn api_detection:app --host 0.0.0.0 --port 8001 --root-path /detection
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.detection.rule=Host(`glucoinai.mentorit.my.id`) && PathPrefix(`/detection`)"
+      - "traefik.http.routers.detection.entrypoints=websecure"
+      - "traefik.http.routers.detection.tls.certresolver=letsencrypt"
+      - "traefik.http.services.detection.loadbalancer.server.port=8001"
+      - "traefik.http.middlewares.detection-strip.stripprefix.prefixes=/detection"
+      - "traefik.http.routers.detection.middlewares=detection-strip"
 
   # API Chatbot
   chatbot-api:
     build: .
     container_name: glucoin-chatbot
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     environment:
       - TF_CPP_MIN_LOG_LEVEL=2
-    command: uvicorn api_chatbot:app --host 0.0.0.0 --port 8002
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    command: uvicorn api_chatbot:app --host 0.0.0.0 --port 8002 --root-path /chatbot
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chatbot.rule=Host(`glucoinai.mentorit.my.id`) && PathPrefix(`/chatbot`)"
+      - "traefik.http.routers.chatbot.entrypoints=websecure"
+      - "traefik.http.routers.chatbot.tls.certresolver=letsencrypt"
+      - "traefik.http.services.chatbot.loadbalancer.server.port=8002"
+      - "traefik.http.middlewares.chatbot-strip.stripprefix.prefixes=/chatbot"
+      - "traefik.http.routers.chatbot.middlewares=chatbot-strip"
+
+volumes:
+  model-data:

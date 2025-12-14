@@ -230,7 +230,7 @@ class QuestionnaireDiabetes(BaseModel):
     gula_darah_puasa: float = Field(..., description="Rata-rata gula darah puasa (mg/dL)", ge=50, le=500)
     rutin_hba1c: bool = Field(..., description="Rutin memeriksakan HbA1c")
     hasil_hba1c: Optional[float] = Field(None, description="Hasil HbA1c terakhir (%)", ge=4, le=15)
-    tekanan_darah_sistolik: float = Field(..., description="Tekanan darah sistolik (mmHg)", ge=80, le=250)
+    tekanan_darah_sistolik: float = Field(..., description="Tekanan darah sistolik (mmHg)", ge=80, le=250) 7
     kondisi_kolesterol: int = Field(..., description="Kolesterol: 0=normal, 1=sedikit tinggi, 2=tinggi", ge=0, le=2)
     konsumsi_obat: bool = Field(..., description="Sedang mengonsumsi obat diabetes")
     pernah_hipoglikemia: bool = Field(..., description="Pernah mengalami hipoglikemia")
@@ -550,127 +550,6 @@ async def detect_from_image(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
-
-
-@app.post("/detect/dual-image", response_model=DualImageDetectionResult)
-async def detect_from_dual_image(
-    tongue_image: UploadFile = File(..., description="Gambar lidah"),
-    nail_image: UploadFile = File(..., description="Gambar kuku")
-):
-    """
-    Deteksi diabetes dari **DUA gambar** (lidah + kuku) untuk hasil lebih akurat.
-    
-    - **tongue_image**: Gambar lidah (jpg, png, jpeg)
-    - **nail_image**: Gambar kuku (jpg, png, jpeg)
-    
-    Skor final = 50% lidah + 50% kuku (jika keduanya valid)
-    """
-    try:
-        results = {
-            "tongue": {"valid": False, "prob": None, "conf": None},
-            "nail": {"valid": False, "prob": None, "conf": None}
-        }
-        errors = []
-        
-        # ============================================================
-        # PROCESS TONGUE IMAGE
-        # ============================================================
-        if not tongue_image.content_type.startswith("image/"):
-            errors.append("File lidah harus berupa gambar")
-        else:
-            contents = await tongue_image.read()
-            img = Image.open(io.BytesIO(contents)).convert('RGB')
-            
-            is_valid, msg, conf = validate_tongue_nail_image(img, "tongue")
-            results["tongue"]["conf"] = conf
-            
-            if is_valid:
-                img_resized = img.resize((224, 224))
-                arr = np.array(img_resized).astype(np.float32)
-                arr = preprocess_input(arr)
-                arr = np.expand_dims(arr, 0)
-                prob = float(model.predict(arr, verbose=0)[0][0])
-                results["tongue"]["valid"] = True
-                results["tongue"]["prob"] = prob
-            else:
-                errors.append(f"Lidah: {msg}")
-        
-        # ============================================================
-        # PROCESS NAIL IMAGE
-        # ============================================================
-        if not nail_image.content_type.startswith("image/"):
-            errors.append("File kuku harus berupa gambar")
-        else:
-            contents = await nail_image.read()
-            img = Image.open(io.BytesIO(contents)).convert('RGB')
-            
-            is_valid, msg, conf = validate_tongue_nail_image(img, "nail")
-            results["nail"]["conf"] = conf
-            
-            if is_valid:
-                img_resized = img.resize((224, 224))
-                arr = np.array(img_resized).astype(np.float32)
-                arr = preprocess_input(arr)
-                arr = np.expand_dims(arr, 0)
-                prob = float(model.predict(arr, verbose=0)[0][0])
-                results["nail"]["valid"] = True
-                results["nail"]["prob"] = prob
-            else:
-                errors.append(f"Kuku: {msg}")
-        
-        # ============================================================
-        # CALCULATE COMBINED SCORE
-        # ============================================================
-        tongue_valid = results["tongue"]["valid"]
-        nail_valid = results["nail"]["valid"]
-        
-        combined_prob = None
-        prediction = None
-        risk_level = None
-        
-        if tongue_valid and nail_valid:
-            # Both valid: 50% tongue + 50% nail
-            combined_prob = (results["tongue"]["prob"] + results["nail"]["prob"]) / 2
-            prediction = "DIABETES" if combined_prob >= THRESHOLD else "NON_DIABETES"
-            risk_level = get_risk_level(combined_prob)
-            message = f"✅ Analisis selesai. Probabilitas diabetes: {combined_prob*100:.1f}% (Lidah: {results['tongue']['prob']*100:.1f}%, Kuku: {results['nail']['prob']*100:.1f}%)"
-            success = True
-        elif tongue_valid:
-            # Only tongue valid
-            combined_prob = results["tongue"]["prob"]
-            prediction = "DIABETES" if combined_prob >= THRESHOLD else "NON_DIABETES"
-            risk_level = get_risk_level(combined_prob)
-            message = f"⚠️ Hanya gambar lidah yang valid. Probabilitas: {combined_prob*100:.1f}%. Gambar kuku tidak terdeteksi."
-            success = True
-        elif nail_valid:
-            # Only nail valid
-            combined_prob = results["nail"]["prob"]
-            prediction = "DIABETES" if combined_prob >= THRESHOLD else "NON_DIABETES"
-            risk_level = get_risk_level(combined_prob)
-            message = f"⚠️ Hanya gambar kuku yang valid. Probabilitas: {combined_prob*100:.1f}%. Gambar lidah tidak terdeteksi."
-            success = True
-        else:
-            # Neither valid
-            message = f"❌ Kedua gambar tidak valid. " + " | ".join(errors)
-            success = False
-        
-        return DualImageDetectionResult(
-            success=success,
-            tongue_valid=tongue_valid,
-            tongue_probability=results["tongue"]["prob"],
-            tongue_validation_confidence=results["tongue"]["conf"],
-            nail_valid=nail_valid,
-            nail_probability=results["nail"]["prob"],
-            nail_validation_confidence=results["nail"]["conf"],
-            combined_probability=combined_prob,
-            prediction=prediction,
-            risk_level=risk_level,
-            message=message
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
-
 
 @app.post("/detect/questionnaire/non-diabetic", response_model=QuestionnaireResult)
 async def questionnaire_non_diabetic(data: QuestionnaireNonDiabetes):

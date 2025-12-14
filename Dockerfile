@@ -10,6 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
+COPY main.py .
 COPY api_detection.py .
 COPY api_chatbot.py .
 COPY diabetes_chatbot/ ./diabetes_chatbot/
@@ -17,8 +18,8 @@ COPY diabetes_chatbot/ ./diabetes_chatbot/
 # Create models directory (model will be mounted/downloaded later)
 RUN mkdir -p models
 
-# Expose ports
-EXPOSE 8001 8002
+# Expose port
+EXPOSE 8000
 
-# Default: run detection API (bisa override di docker-compose)
-CMD ["uvicorn", "api_detection:app", "--host", "0.0.0.0", "--port", "8001"]
+# Run combined API
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

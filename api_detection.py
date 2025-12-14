@@ -276,6 +276,34 @@ class CombinedResult(BaseModel):
     interpretation: str
     recommendations: List[str]
 
+class FullScreeningResult(BaseModel):
+    """Result untuk full screening (lidah + kuku + kuesioner)"""
+    success: bool
+    
+    # Tongue results
+    tongue_valid: bool = False
+    tongue_probability: Optional[float] = None
+    tongue_message: Optional[str] = None
+    
+    # Nail results
+    nail_valid: bool = False
+    nail_probability: Optional[float] = None
+    nail_message: Optional[str] = None
+    
+    # Image combined
+    image_score: Optional[float] = None
+    images_analyzed: int = 0
+    
+    # Questionnaire results
+    questionnaire_score: float
+    
+    # Final combined results (60% image + 40% questionnaire)
+    final_score: float
+    risk_level: str  # "tidak", "rendah", "sedang", "tinggi"
+    prediction: str  # "DIABETES" atau "NON_DIABETES"
+    interpretation: str
+    recommendations: List[str]
+
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
@@ -487,12 +515,190 @@ async def root():
         "service": "Diabetes Detection API",
         "version": "1.0.0",
         "endpoints": {
+            "full_screening": "POST /detect/full-screening",
             "detect_image": "POST /detect/image",
             "detect_questionnaire_non_diabetic": "POST /detect/questionnaire/non-diabetic",
             "detect_questionnaire_diabetic": "POST /detect/questionnaire/diabetic",
             "detect_combined": "POST /detect/combined"
         }
     }
+
+# ============================================================
+# FULL SCREENING ENDPOINT (LIDAH + KUKU + KUESIONER)
+# ============================================================
+
+@app.post("/detect/full-screening", response_model=FullScreeningResult)
+async def full_screening(
+    tongue_image: UploadFile = File(..., description="Foto lidah (wajib)"),
+    nail_image: UploadFile = File(..., description="Foto kuku (wajib)"),
+    # Kuesioner fields (untuk non-diabetic / screening)
+    penglihatan_buram: bool = False,
+    sering_bak: bool = False,
+    luka_lama_sembuh: bool = False,
+    kesemutan: bool = False,
+    obesitas: bool = False,
+    sering_lapar: bool = False,
+    berat_badan: float = 70.0,
+    tinggi_badan: float = 170.0,
+    riwayat_keluarga: bool = False,
+    tekanan_darah_tinggi: bool = False,
+    kolesterol_tinggi: bool = False,
+    frekuensi_olahraga: int = 1,
+    pola_makan: int = 1
+):
+    """
+    🩺 FULL SCREENING - Deteksi diabetes lengkap dengan foto lidah + kuku + kuesioner
+    
+    **Upload 2 gambar + isi kuesioner untuk hasil paling akurat**
+    
+    ### Gambar:
+    - **tongue_image**: Foto lidah (format: jpg/png/jpeg)
+    - **nail_image**: Foto kuku jari tangan (format: jpg/png/jpeg)
+    
+    ### Kuesioner (untuk screening/belum diabetes):
+    - **penglihatan_buram**: Penglihatan tiba-tiba buram?
+    - **sering_bak**: Sering buang air kecil, terutama malam hari?
+    - **luka_lama_sembuh**: Luka kulit lama sembuh?
+    - **kesemutan**: Sering kesemutan di tangan/kaki?
+    - **obesitas**: Berat badan berlebih/obesitas?
+    - **sering_lapar**: Sering lapar walau sudah makan?
+    - **berat_badan**: Berat badan (kg)
+    - **tinggi_badan**: Tinggi badan (cm)
+    - **riwayat_keluarga**: Ada keluarga dengan diabetes tipe 2?
+    - **tekanan_darah_tinggi**: Pernah didiagnosis darah tinggi?
+    - **kolesterol_tinggi**: Kolesterol pernah tinggi?
+    - **frekuensi_olahraga**: 0=tidak pernah, 1=1-2x, 2=3-4x, 3=5+x seminggu
+    - **pola_makan**: 0=tinggi gula/karbo, 1=cukup seimbang, 2=sehat
+    
+    ### Perhitungan Skor:
+    - 60% dari analisis gambar (rata-rata lidah + kuku)
+    - 40% dari kuesioner
+    
+    ### Risk Level:
+    - **tidak** (< 25%): Risiko rendah
+    - **rendah** (25-50%): Perlu perhatian
+    - **sedang** (50-75%): Risiko tinggi, perlu skrining
+    - **tinggi** (> 75%): Sangat berisiko, segera periksa
+    """
+    try:
+        tongue_prob = None
+        nail_prob = None
+        tongue_valid = False
+        nail_valid = False
+        tongue_msg = ""
+        nail_msg = ""
+        images_analyzed = 0
+        
+        current_model = get_model()
+        
+        # ============================================================
+        # PROCESS TONGUE IMAGE
+        # ============================================================
+        if tongue_image and tongue_image.content_type.startswith("image/"):
+            contents = await tongue_image.read()
+            img = Image.open(io.BytesIO(contents)).convert('RGB')
+            
+            is_valid, validation_msg, _ = validate_tongue_nail_image(img, "tongue")
+            tongue_msg = validation_msg
+            
+            if is_valid and current_model is not None:
+                tongue_valid = True
+                img_resized = img.resize((224, 224))
+                arr = np.array(img_resized).astype(np.float32)
+                arr = preprocess_input(arr)
+                arr = np.expand_dims(arr, 0)
+                tongue_prob = float(current_model.predict(arr, verbose=0)[0][0])
+                images_analyzed += 1
+            elif not is_valid:
+                tongue_msg = f"Lidah: {validation_msg}"
+        
+        # ============================================================
+        # PROCESS NAIL IMAGE
+        # ============================================================
+        if nail_image and nail_image.content_type.startswith("image/"):
+            contents = await nail_image.read()
+            img = Image.open(io.BytesIO(contents)).convert('RGB')
+            
+            is_valid, validation_msg, _ = validate_tongue_nail_image(img, "nail")
+            nail_msg = validation_msg
+            
+            if is_valid and current_model is not None:
+                nail_valid = True
+                img_resized = img.resize((224, 224))
+                arr = np.array(img_resized).astype(np.float32)
+                arr = preprocess_input(arr)
+                arr = np.expand_dims(arr, 0)
+                nail_prob = float(current_model.predict(arr, verbose=0)[0][0])
+                images_analyzed += 1
+            elif not is_valid:
+                nail_msg = f"Kuku: {validation_msg}"
+        
+        # ============================================================
+        # CALCULATE IMAGE SCORE (average of valid images)
+        # ============================================================
+        image_score = None
+        if tongue_prob is not None and nail_prob is not None:
+            image_score = (tongue_prob + nail_prob) / 2
+        elif tongue_prob is not None:
+            image_score = tongue_prob
+        elif nail_prob is not None:
+            image_score = nail_prob
+        
+        # ============================================================
+        # CALCULATE QUESTIONNAIRE SCORE
+        # ============================================================
+        questionnaire = QuestionnaireNonDiabetes(
+            penglihatan_buram=penglihatan_buram,
+            sering_bak=sering_bak,
+            luka_lama_sembuh=luka_lama_sembuh,
+            kesemutan=kesemutan,
+            obesitas=obesitas,
+            sering_lapar=sering_lapar,
+            berat_badan=berat_badan,
+            tinggi_badan=tinggi_badan,
+            riwayat_keluarga=riwayat_keluarga,
+            tekanan_darah_tinggi=tekanan_darah_tinggi,
+            kolesterol_tinggi=kolesterol_tinggi,
+            frekuensi_olahraga=frekuensi_olahraga,
+            pola_makan=pola_makan
+        )
+        q_score = calculate_non_diabetic_score(questionnaire)
+        
+        # ============================================================
+        # CALCULATE FINAL SCORE
+        # ============================================================
+        if image_score is not None:
+            # 60% image + 40% questionnaire
+            final_score = (0.60 * image_score) + (0.40 * q_score)
+        else:
+            # 100% questionnaire if no valid images
+            final_score = q_score
+        
+        risk_level = get_risk_level(final_score)
+        prediction = "DIABETES" if final_score >= THRESHOLD else "NON_DIABETES"
+        interpretation = get_interpretation(final_score, is_diabetic=False)
+        recommendations = get_recommendations(final_score, is_diabetic=False)
+        
+        return FullScreeningResult(
+            success=True,
+            tongue_valid=tongue_valid,
+            tongue_probability=tongue_prob,
+            tongue_message=tongue_msg,
+            nail_valid=nail_valid,
+            nail_probability=nail_prob,
+            nail_message=nail_msg,
+            image_score=image_score,
+            images_analyzed=images_analyzed,
+            questionnaire_score=q_score,
+            final_score=final_score,
+            risk_level=risk_level,
+            prediction=prediction,
+            interpretation=interpretation,
+            recommendations=recommendations
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/detect/image", response_model=ImageDetectionResult)
 async def detect_from_image(

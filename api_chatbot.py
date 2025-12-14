@@ -243,10 +243,22 @@ app.add_middleware(
 
 def chat_with_groq(message: str, search_context: str = None) -> str:
     """Chat dengan Groq API"""
+    global groq_client
+    
+    # Try to initialize if not set
+    if groq_client is None:
+        api_key = os.getenv("GROQ_API_KEY")
+        if api_key and GROQ_AVAILABLE:
+            try:
+                groq_client = Groq(api_key=api_key)
+                print("✅ Groq client initialized on-demand")
+            except Exception as e:
+                print(f"❌ Failed to init Groq: {e}")
+    
     if not groq_client:
         raise HTTPException(
             status_code=503, 
-            detail="Groq API not configured. Install groq package dan set API key."
+            detail=f"Groq API not configured. GROQ_AVAILABLE={GROQ_AVAILABLE}, API_KEY_EXISTS={os.getenv('GROQ_API_KEY') is not None}"
         )
     
     messages = [

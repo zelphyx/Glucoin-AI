@@ -28,12 +28,16 @@ import time
 # ============================================================
 # GROQ SETUP (GRATIS!)
 # ============================================================
+GROQ_AVAILABLE = False
+Groq = None
 try:
     from groq import Groq
     GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
-    print("⚠️ Install groq: pip install groq")
+    print("✅ Groq library imported successfully")
+except ImportError as e:
+    print(f"⚠️ Install groq: pip install groq. Error: {e}")
+except Exception as e:
+    print(f"⚠️ Groq import error: {e}")
 
 
 # ============================================================
@@ -243,16 +247,27 @@ app.add_middleware(
 
 def chat_with_groq(message: str, search_context: str = None) -> str:
     """Chat dengan Groq API"""
-    global groq_client
+    global groq_client, Groq
     
     # Try to initialize if not set
     if groq_client is None:
         api_key = os.getenv("GROQ_API_KEY")
-        print(f"🔑 Attempting Groq init. API key length: {len(api_key) if api_key else 0}")
-        if api_key and GROQ_AVAILABLE:
+        print(f"🔑 Attempting Groq init. API key exists: {bool(api_key)}")
+        if api_key and GROQ_AVAILABLE and Groq is not None:
             try:
+                # Simple init without extra params
                 groq_client = Groq(api_key=api_key)
                 print("✅ Groq client initialized on-demand")
+            except TypeError as e:
+                # Try alternative init
+                print(f"⚠️ TypeError on Groq init: {e}, trying simpler init...")
+                try:
+                    import groq as groq_module
+                    groq_client = groq_module.Client(api_key=api_key)
+                    print("✅ Groq client initialized with alternative method")
+                except Exception as e2:
+                    print(f"❌ Failed to init Groq (alt): {e2}")
+                    raise HTTPException(status_code=503, detail=f"Groq init failed: {str(e)}")
             except Exception as e:
                 print(f"❌ Failed to init Groq: {e}")
                 raise HTTPException(status_code=503, detail=f"Groq init failed: {str(e)}")

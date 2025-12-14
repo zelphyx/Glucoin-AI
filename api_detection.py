@@ -29,10 +29,27 @@ from tensorflow.keras.applications.mobilenet_v3 import preprocess_input
 # Use relative path for Docker deployment
 BASE_DIR = Path(__file__).parent
 MODEL_PATH = BASE_DIR / "models" / "simple_v12_best.keras"
-print(f"🔄 Loading model from {MODEL_PATH}...")
-model = tf.keras.models.load_model(MODEL_PATH)
 THRESHOLD = 0.60
-print("✅ Model loaded!")
+
+# Lazy load model - don't crash if model not found
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        if not MODEL_PATH.exists():
+            print(f"⚠️ Model not found at {MODEL_PATH}")
+            return None
+        print(f"🔄 Loading model from {MODEL_PATH}...")
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print("✅ Model loaded!")
+    return model
+
+# Try to load on startup (but don't crash if not found)
+try:
+    get_model()
+except Exception as e:
+    print(f"⚠️ Could not load model: {e}")
 
 # ============================================================
 # FASTAPI APP
@@ -58,7 +75,7 @@ app.add_middleware(
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Docker/Dokploy"""
-    return {"status": "healthy", "model_loaded": model is not None}
+    return {"status": "healthy", "model_loaded": get_model() is not None}
 
 @app.get("/")
 async def root():
@@ -524,13 +541,18 @@ async def detect_from_image(
         # ============================================================
         # PROCESS VALID IMAGE
         # ============================================================
+        # Check if model is loaded
+        current_model = get_model()
+        if current_model is None:
+            raise HTTPException(status_code=503, detail="Model belum tersedia. Silakan coba lagi nanti.")
+        
         img_resized = img.resize((224, 224))
         arr = np.array(img_resized).astype(np.float32)
         arr = preprocess_input(arr)
         arr = np.expand_dims(arr, 0)
         
         # Predict
-        prob = float(model.predict(arr, verbose=0)[0][0])
+        prob = float(current_model.predict(arr, verbose=0)[0][0])
         prediction = "DIABETES" if prob >= THRESHOLD else "NON_DIABETES"
         risk_level = get_risk_level(prob)
         

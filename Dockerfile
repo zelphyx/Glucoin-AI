@@ -4,9 +4,12 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (untuk cache layer)
@@ -19,7 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY api_detection.py .
 COPY api_chatbot.py .
 COPY diabetes_chatbot/ ./diabetes_chatbot/
-COPY models/ ./models/
+
+# Create models directory (model will be mounted/downloaded later)
+RUN mkdir -p models
 
 # Expose ports
 EXPOSE 8001 8002

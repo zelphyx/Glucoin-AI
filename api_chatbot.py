@@ -248,12 +248,14 @@ def chat_with_groq(message: str, search_context: str = None) -> str:
     # Try to initialize if not set
     if groq_client is None:
         api_key = os.getenv("GROQ_API_KEY")
+        print(f"🔑 Attempting Groq init. API key length: {len(api_key) if api_key else 0}")
         if api_key and GROQ_AVAILABLE:
             try:
                 groq_client = Groq(api_key=api_key)
                 print("✅ Groq client initialized on-demand")
             except Exception as e:
                 print(f"❌ Failed to init Groq: {e}")
+                raise HTTPException(status_code=503, detail=f"Groq init failed: {str(e)}")
     
     if not groq_client:
         raise HTTPException(

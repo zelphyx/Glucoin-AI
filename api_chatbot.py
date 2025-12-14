@@ -179,9 +179,13 @@ async def lifespan(app: FastAPI):
     print("🤖 Starting Glucare Chatbot API")
     print("=" * 60)
     
+    # Debug: check env var
+    api_key = os.getenv("GROQ_API_KEY")
+    print(f"🔑 GROQ_API_KEY exists: {api_key is not None and len(api_key) > 0}")
+    
     # Setup Groq client
-    if GROQ_AVAILABLE and os.getenv("GROQ_API_KEY"):
-        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    if GROQ_AVAILABLE and api_key:
+        groq_client = Groq(api_key=api_key)
         print("✅ Groq client initialized")
         print("   Model: llama-3.3-70b-versatile (GRATIS!)")
     else:

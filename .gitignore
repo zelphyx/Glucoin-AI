@@ -3,8 +3,7 @@
 # Large files
 *.zip
 
-# Model files
-models/
+
 
 # Dataset (too large for git)
 data/

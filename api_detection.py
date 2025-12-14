@@ -247,7 +247,7 @@ class QuestionnaireDiabetes(BaseModel):
     gula_darah_puasa: float = Field(..., description="Rata-rata gula darah puasa (mg/dL)", ge=50, le=500)
     rutin_hba1c: bool = Field(..., description="Rutin memeriksakan HbA1c")
     hasil_hba1c: Optional[float] = Field(None, description="Hasil HbA1c terakhir (%)", ge=4, le=15)
-    tekanan_darah_sistolik: float = Field(..., description="Tekanan darah sistolik (mmHg)", ge=80, le=250) 7
+    tekanan_darah_sistolik: float = Field(..., description="Tekanan darah sistolik (mmHg)", ge=80, le=250)
     kondisi_kolesterol: int = Field(..., description="Kolesterol: 0=normal, 1=sedikit tinggi, 2=tinggi", ge=0, le=2)
     konsumsi_obat: bool = Field(..., description="Sedang mengonsumsi obat diabetes")
     pernah_hipoglikemia: bool = Field(..., description="Pernah mengalami hipoglikemia")
